@@ -27,7 +27,3 @@ import mlflow
 model_name = "iot_anomaly_detection_xgboost"
 username = dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()
 mlflow.set_experiment('/Users/{}/iot_anomaly_detection'.format(username))
-
-# COMMAND ----------
-
-

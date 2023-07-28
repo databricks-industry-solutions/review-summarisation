@@ -46,7 +46,3 @@ dbutils.fs.mv("file:/databricks/driver/coupon_redempt.csv", "dbfs:/tmp/propensit
 dbutils.fs.mv("file:/databricks/driver/hh_demographic.csv", "dbfs:/tmp/propensity/bronze/hh_demographic.csv")
 dbutils.fs.mv("file:/databricks/driver/product.csv", "dbfs:/tmp/propensity/bronze/product.csv")
 dbutils.fs.mv("file:/databricks/driver/transaction_data.csv", "dbfs:/tmp/propensity/bronze/transaction_data.csv")
-
-# COMMAND ----------
-
-
