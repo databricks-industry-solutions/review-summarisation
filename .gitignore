@@ -129,3 +129,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# VSCode
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Databricks Extensions
+.dbx/lock.json
+.dbx/sync
+.databricks/
+typings/
