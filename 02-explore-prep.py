@@ -30,12 +30,17 @@
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC USE CATALOG mas;
+# MAGIC
 # MAGIC -- You can skip this line if no-UC
-# MAGIC USE SCHEMA review_summarisation;
+# MAGIC USE CATALOG mas;
+# MAGIC
 # MAGIC -- Sets the standard database to be used in this notebook
+# MAGIC USE SCHEMA review_summarisation;
 
 # COMMAND ----------
+
+# 4x total core count
+spark.conf.set("spark.sql.shuffle.partitions", 512)
 
 # Read the table
 raw_book_reviews_df = spark.read.table("raw_book_reviews")
@@ -64,8 +69,8 @@ focus_columns = [
     "asin",
     "title",
     "brand AS author",
-    # "price",
     "main_cat AS main_category",
+    
     # Review Attributes
     "reviewerID AS reviewer_id",
     "reviewerName AS reviewer_name",
@@ -127,9 +132,9 @@ display(
 
 display(
     book_reviews_df
-    .filter(SF.col("asin") == "B001MQA3DU")
-    .filter(SF.col("reviewer_id") == "A3EBCNHNQIP2Z3")
-    .filter(SF.col("unix_review_time") == "1454457600")
+    .filter(SF.col("asin") == "B001MVNGCU")
+    .filter(SF.col("reviewer_id") == "A2HCIFY7GK3VNG")
+    .filter(SF.col("unix_review_time") == "1481068800")
 )
 
 # COMMAND ----------
@@ -181,7 +186,6 @@ display(
     .filter(SF.col("count") > 1)
     .orderBy(SF.col("count").desc())
     .groupby().sum("count")
-    # .count()
 )
 
 # COMMAND ----------
@@ -348,20 +352,11 @@ book_reviews_df = (
     .withColumn("review_summary", clean_text(SF.col("review_summary")))
 )
 
-
-
-# COMMAND ----------
-
-# Running the same to see if we are good to go
+# Making sure we get rid of all
 book_reviews_df = (
     book_reviews_df
     .filter(~SF.col("review_text").rlike("<a|</a>|href=|hook="))
 )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC Looks like there is still a few thats coming though, however we can try to deal with those in the next section
 
 # COMMAND ----------
 
@@ -416,7 +411,7 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Even though there were some small examples left which contained some unexpected characters, there wasn't any text which our encoder couldn't deal with, which is great news
+# MAGIC There wasn't any text which our encoder couldn't deal with, which is great news
 
 # COMMAND ----------
 
@@ -649,7 +644,6 @@ from pyspark.sql import functions as SF
 
 books_df = (
     book_reviews_df
-    .repartition(256)
     .groupBy("asin", "title", "author")
     .agg(
         SF.min("review_date").alias("first_review_date"),
@@ -667,21 +661,247 @@ display(books_df)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC   *
-# MAGIC FROM
-# MAGIC   raw_books
-# MAGIC WHERE
-# MAGIC   asin = "0349403759"
-
-# COMMAND ----------
-
+# Check out how many reviews we can cover if we take top 1000 books (ordered by number of reviews recieved)
 display(
     books_df
+    .orderBy(SF.col("review_count").desc())
     .limit(1000)
-    .groupBy().sum("review_count"))
+    .groupBy()
+    .sum("review_count").alias("total_review_count")
+)
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC #### Book Sampling
+# MAGIC If we take the top 1000 books, ordered by the number of reviews they have recieved, we end up with a sample which contains 3.8 million reviews. In a real world scenario, our goal would be to process all the reviews, however for showcasing purposes understanding how we can deal with 3.8 million reviews should be good enough. So lets go ahead and limit our dataset to the top 1000 books.
 
+# COMMAND ----------
+
+# Select the top 1000 books
+books_df = (
+    books_df
+    .orderBy(SF.col("review_count").desc())
+    .limit(1000)
+)
+
+display(books_df)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### Reviews Sampling
+# MAGIC
+# MAGIC Same as we did for books, we can go ahead and sample our reviews
+
+# COMMAND ----------
+
+# Inner join with the sampled books df to apply sample in reviews
+book_reviews_df = (
+    book_reviews_df
+    .join(books_df.select("asin"), how="inner", on="asin")
+)
+
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### Build Review Batches
+# MAGIC
+# MAGIC We have our sampled reviews dataframe ready, which contains about 3.8 million reviews. Now, its time to prepare these reviews in batches so we can start extracting summaries.
+# MAGIC
+# MAGIC What we want to do here is to aim to create batches which have about 800 tokens each per product, ordered by date.
+# MAGIC
+# MAGIC So, for example, if a certain product recieved 5 reviews which in total makes up about 800 tokens, we want to call that batch 1, and the next group of reviews will then start falling into batch 2 until they make up 800 tokens as well.
+# MAGIC
+# MAGIC We need to batch the reviews like this, because our ultimate goal is to feed the LLM model about 800 tokens of reviews or less at a time due to context length considerations. To recap, context length has to do with how much information is passed to the LLM at a given time. Eventhough some models have larger context lengths, there has been studies which show that model performance and accuracy degrades as context length increases.
+# MAGIC
+# MAGIC If we were to think about this from a real life like perspective, imagine that rather than the LLM, we are tasked with summarising a given set of reviews in to bullet points. If we maybe read 2 or 3 reviews, and try to create bullet points out of that, we can potentially do it without having to go back to text our without forgetting about what we read. However, if we were to read 10 reviews at a time, we might have a harder time remembering everything or summarising the information we just read into bullet points. 
+# MAGIC
+# MAGIC The same can be said for LLMs: processing gets harder, and quality drops.. Therefore, creating mini batches of reviews like this is a good idea.
+# MAGIC
+# MAGIC One thing to clarify: we are not going to cut a certain review in half just to fill up the batch limit. For example, if the first 4 reviews add up to 700 tokens, and if the 5th review has 150 tokens (which would push the batch over the limit), we are simply going to take the first 4 reviews, call it a batch, and then start the new batch with the 5th review.
+# MAGIC
+# MAGIC We are also going to create seperate batches for high score and low score reviews (based on the classes we have created before).
+
+# COMMAND ----------
+
+# External Imports
+from pyspark.sql import functions as SF
+from pyspark.sql import Window
+
+# Set max n_tokens per batch
+max_n_tokens = 800
+
+# Define the window partitioned by product id (asin) and rating class, order it by date and reviewer_id 
+batch_window = Window.partitionBy("asin", "star_rating_class").orderBy("review_date", "reviewer_id")
+
+# Calculate the cumulative sum with respect to the window
+book_reviews_df = (
+    book_reviews_df
+    .withColumn("cumulative_n_tokens", SF.sum("review_n_tokens").over(batch_window))
+    .orderBy("asin", "star_rating_class", "review_date", "reviewer_id")
+)
+
+# Take a look at the data
+display(
+    book_reviews_df
+    .select("asin", "title", "star_rating_class", "review_date", "review_n_tokens", "cumulative_n_tokens")
+    .limit(10)
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC We just calculated the cumulative number of tokens per book and per star rating class. But how is this going to help us ? How can we get to batches from here ?
+# MAGIC
+# MAGIC The answer is quite simple - if we divide the cumulative_n_tokens column by our max token limit, and then round that number up (ceil it), that should do the trick.
+# MAGIC
+# MAGIC For example, theoritically speaking, in the above example the cutoff point for the first batch should be at the 9th row, where the 9th row marks the end of the batch 1 (since it will have 800 tokens), and then the 10th row should be the first example in batch 2. 
+# MAGIC
+# MAGIC If we divide the cumulative_n_tokens by 800, for the rows 9 and above, that is going to produce a results between 0 and 1. And then rounding that result up will mark those rows as batch 1. 
+# MAGIC
+# MAGIC Lets implement this and have a look:
+
+# COMMAND ----------
+
+# External Imports
+from pyspark.sql import functions as SF
+
+# Create batch column
+book_reviews_df = (
+    book_reviews_df
+    .withColumn("batch_id", SF.ceil(SF.col("cumulative_n_tokens") / max_n_tokens))
+)
+
+display(
+    book_reviews_df
+    .select("asin", "title", "star_rating_class", "review_date", "review_n_tokens", "cumulative_n_tokens", "batch_id")
+    .limit(10)
+)
+
+# COMMAND ----------
+
+display(book_reviews_df.limit(5))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### Aggregate Reviews
+# MAGIC
+# MAGIC Now that we have created our mini batches to be processed, what we can do is to aggregate our reviews with respect to product ids, star rating class and batch id. What does aggregating reviews mean though ? It means that we want make one big review by combining all the reviews into a single text piece by concatenation. So, it will be like review_1 + review_2 + .. + review_n in a batch as a single string. This is what we will pass to the LLM to process and extract insights from.
+# MAGIC
+# MAGIC We have grouped this by star rating class as well, since there is an imbalance between ratings and since we want to make sure we understand the points which the customers are not happy about. So, after we have done our aggregation, we are going to ask our LLM to extract the points which the customers are happy about form high scored reviews, and extract the points which customers are dissatisfied about from the low scored reviews.
+
+# COMMAND ----------
+
+from pyspark.sql import functions as SF
+
+@SF.udf("string")
+def custom_concat(elements):
+    result = ""
+    for e in elements:
+        if e.endswith("."):
+            result += e + " "  # Add space if ends with full stop
+        else:
+            result += e + ". "  # Add full stop and space otherwise
+    return result
+
+# Create batched book reviews
+batched_book_reviews_df = (
+    book_reviews_df.groupBy(
+        "asin",
+        "title",
+        "author",
+        "star_rating_class",
+        "batch_id",
+    )
+    .agg(
+        SF.sum("review_n_tokens").alias("n_tokens"),
+        SF.count("reviewer_id").alias("n_reviews"),
+        SF.round(SF.avg("star_rating"), 2).alias("avg_star_rating"),
+        SF.min("review_date").alias("first_review_date"),
+        SF.max("review_date").alias("last_review_date"),
+        SF.collect_list("review_text").alias("review_array"),
+    )
+    .withColumn("concat_review_text", custom_concat(SF.col("review_array")))
+    .drop("review_array")
+    .orderBy(
+        "asin",
+        "star_rating_class",
+        "batch_id"
+    )
+)
+
+display(batched_book_reviews_df.limit(5))
+
+# COMMAND ----------
+
+# External Imports
+from pyspark.sql import functions as SF
+
+# Get some summary statistics on the data
+display(
+    batched_book_reviews_df
+    .groupBy()
+    .agg(
+        SF.countDistinct("asin").alias("n_books"),
+        SF.count("*").alias("n_batches"),
+        SF.sum("n_reviews").alias("n_reviews"),
+        SF.sum("n_tokens").alias("total_tokens"),
+    )
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC #### Save the Data
+# MAGIC We have
+# MAGIC * Cleaed the book reviews
+# MAGIC * Analysed our data's distribution accross multiple dimensions
+# MAGIC * Created a new books metadata table
+# MAGIC * Sampled and dealt with inbalances
+# MAGIC * Aggregated and batched our reviews
+# MAGIC
+# MAGIC At the end, we ended up with:
+# MAGIC
+# MAGIC | n_books   | n_batches   | n_reviews   | total_tokens   |
+# MAGIC |:----------|:------------|:------------|:---------------|
+# MAGIC | 1.0K      | 196.1K      | 3.8M        | 156.1M         |
+# MAGIC
+# MAGIC
+# MAGIC Lets go ahead and save our new dataframes
+
+# COMMAND ----------
+
+# Book Reviews
+(
+    book_reviews_df
+    .write
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable("cleaned_book_reviews")
+)
+
+# Books
+(
+    books_df
+    .write
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable("cleaned_books")
+)
+
+# Batched Book Reviews
+(
+    batched_book_reviews_df
+    .write
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .saveAsTable("batched_book_reviews")
+)
+
+# Optimize All
+_ = spark.sql("OPTIMIZE cleaned_book_reviews;")
+_ = spark.sql("OPTIMIZE cleaned_books;")
+_ = spark.sql("OPTIMIZE batched_book_reviews;")
