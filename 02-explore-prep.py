@@ -23,7 +23,7 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Initial Setup
+# MAGIC ### Initial Setup
 # MAGIC
 # MAGIC Here we will begin by setting up the data standards and reading the `raw_book_reviews_df` we created in the last notebook.
 
@@ -48,13 +48,13 @@ raw_book_reviews_df = spark.read.table("raw_book_reviews")
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Column Selection
+# MAGIC ### Column Selection
 # MAGIC The dataframe has many columns, but we don't really need all of them for this specific task. Some might be better suited for other algorithms such as product recommenders, so lets pick and choose what might be useful for us.
 
 # COMMAND ----------
 
 # To see what we have, lets quickly display the data
-display(raw_book_reviews_df.limit(20))
+display(raw_book_reviews_df.limit(2))
 
 # COMMAND ----------
 
@@ -88,7 +88,7 @@ display(book_reviews_df.limit(10))
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### De-Duplicate
+# MAGIC ### De-Duplicate
 # MAGIC
 # MAGIC We had some issues with duplicating records on the previous notebook, lets see if we can resolve that here.
 
@@ -197,6 +197,7 @@ display(
 
 print(f"Current count: {book_reviews_df.count()}")
 
+# Build duplicates 
 de_dupe_df = (
     book_reviews_df
     .groupBy("asin", "reviewer_id")
@@ -206,13 +207,15 @@ de_dupe_df = (
     .select("asin", "reviewer_id")
 )
 
+# Remove with anti join
 book_reviews_df = book_reviews_df.join(de_dupe_df, on=["asin", "reviewer_id"], how="leftanti")
+
 print(f"After count: {book_reviews_df.count()}")
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Date Transformations
+# MAGIC ### Date Transformations
 # MAGIC Given the UNIX time, we want to extract things like date and time, year month, and year week so we can slice and dice our data properly with different time ranges
 
 # COMMAND ----------
@@ -255,7 +258,7 @@ display(
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Verified vs Non-Verified Purchases
+# MAGIC ### Verified vs Non-Verified Purchases
 # MAGIC Lets take a look at verified vs non verified reviewers. The difference is - if a review is verified, it means that the review came from someone who actually purchased the book. Non-verified reviews may include false reviews or inputs from bots who try to spam reviews for multiple reasons. Ideally, we want to keep our data as high quality as possible. So lets see what our distribution looks like over there 
 
 # COMMAND ----------
@@ -661,11 +664,12 @@ display(books_df)
 
 # COMMAND ----------
 
-# Check out how many reviews we can cover if we take top 1000 books (ordered by number of reviews recieved)
+# Check out how many reviews we can cover if we take top 1000 books and sample it by 10 percent (ordered by number of reviews recieved)
 display(
     books_df
     .orderBy(SF.col("review_count").desc())
     .limit(1000)
+    # .sample(False, fraction=0.1, seed=42)
     .groupBy()
     .sum("review_count").alias("total_review_count")
 )
@@ -674,7 +678,7 @@ display(
 
 # MAGIC %md
 # MAGIC #### Book Sampling
-# MAGIC If we take the top 1000 books, ordered by the number of reviews they have recieved, we end up with a sample which contains 3.8 million reviews. In a real world scenario, our goal would be to process all the reviews, however for showcasing purposes understanding how we can deal with 3.8 million reviews should be good enough. So lets go ahead and limit our dataset to the top 1000 books.
+# MAGIC If we take the top 1000 popular books, and sample it by 10%, we end up with a sample which contains 386k reviews. In a real world scenario, our goal would be to process all the reviews, however for showcasing purposes understanding how we can deal with 386k reviews should be good enough.
 
 # COMMAND ----------
 
@@ -683,6 +687,7 @@ books_df = (
     books_df
     .orderBy(SF.col("review_count").desc())
     .limit(1000)
+    # .sample(False, fraction=0.1, seed=42)
 )
 
 display(books_df)
@@ -702,15 +707,16 @@ book_reviews_df = (
     .join(books_df.select("asin"), how="inner", on="asin")
 )
 
-
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC #### Build Review Batches
 # MAGIC
-# MAGIC We have our sampled reviews dataframe ready, which contains about 3.8 million reviews. Now, its time to prepare these reviews in batches so we can start extracting summaries.
+# MAGIC We have our sampled reviews dataframe ready, which contains about 380k reviews. Now, its time to prepare these reviews in batches so we can start extracting summaries.
 # MAGIC
-# MAGIC What we want to do here is to aim to create batches which have about 800 tokens each per product, ordered by date.
+# MAGIC We will group our reviews by product, rating class, and week, however we will then have some weeks where a book recived many reviews which may increase token count by a lot and make it harder to process using our LLM model, therfore we want to create batches as well.
+# MAGIC
+# MAGIC Aiming to create batches which have about 800 tokens each per product, ordered by date makes sense here. This won't be an exact science though.
 # MAGIC
 # MAGIC So, for example, if a certain product recieved 5 reviews which in total makes up about 800 tokens, we want to call that batch 1, and the next group of reviews will then start falling into batch 2 until they make up 800 tokens as well.
 # MAGIC
@@ -734,7 +740,7 @@ from pyspark.sql import Window
 max_n_tokens = 800
 
 # Define the window partitioned by product id (asin) and rating class, order it by date and reviewer_id 
-batch_window = Window.partitionBy("asin", "star_rating_class").orderBy("review_date", "reviewer_id")
+batch_window = Window.partitionBy("asin", "week_start", "star_rating_class").orderBy("review_date", "reviewer_id")
 
 # Calculate the cumulative sum with respect to the window
 book_reviews_df = (
@@ -776,13 +782,9 @@ book_reviews_df = (
 
 display(
     book_reviews_df
-    .select("asin", "title", "star_rating_class", "review_date", "review_n_tokens", "cumulative_n_tokens", "batch_id")
-    .limit(10)
+    .select("asin", "title", "star_rating_class", "review_date", "week_start", "review_n_tokens", "cumulative_n_tokens", "batch_id")
+    .limit(5)
 )
-
-# COMMAND ----------
-
-display(book_reviews_df.limit(5))
 
 # COMMAND ----------
 
@@ -797,16 +799,6 @@ display(book_reviews_df.limit(5))
 
 from pyspark.sql import functions as SF
 
-@SF.udf("string")
-def custom_concat(elements):
-    result = ""
-    for e in elements:
-        if e.endswith("."):
-            result += e + " "  # Add space if ends with full stop
-        else:
-            result += e + ". "  # Add full stop and space otherwise
-    return result
-
 # Create batched book reviews
 batched_book_reviews_df = (
     book_reviews_df.groupBy(
@@ -814,6 +806,7 @@ batched_book_reviews_df = (
         "title",
         "author",
         "star_rating_class",
+        "week_start",
         "batch_id",
     )
     .agg(
@@ -824,12 +817,16 @@ batched_book_reviews_df = (
         SF.max("review_date").alias("last_review_date"),
         SF.collect_list("review_text").alias("review_array"),
     )
-    .withColumn("concat_review_text", custom_concat(SF.col("review_array")))
+    .withColumn(
+        "concat_review_text", 
+        SF.concat_ws(" ", SF.col("review_array"))
+    )
     .drop("review_array")
     .orderBy(
         "asin",
         "star_rating_class",
-        "batch_id"
+        "week_start",
+        "batch_id",
     )
 )
 
@@ -867,7 +864,7 @@ display(
 # MAGIC
 # MAGIC | n_books   | n_batches   | n_reviews   | total_tokens   |
 # MAGIC |:----------|:------------|:------------|:---------------|
-# MAGIC | 1.0K      | 196.1K      | 3.8M        | 156.1M         |
+# MAGIC | 101       | 45.3K       | 386K        | 15.7M          |
 # MAGIC
 # MAGIC
 # MAGIC Lets go ahead and save our new dataframes
@@ -905,3 +902,7 @@ display(
 _ = spark.sql("OPTIMIZE cleaned_book_reviews;")
 _ = spark.sql("OPTIMIZE cleaned_books;")
 _ = spark.sql("OPTIMIZE batched_book_reviews;")
+
+# COMMAND ----------
+
+
