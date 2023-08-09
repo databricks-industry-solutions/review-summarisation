@@ -3,14 +3,17 @@
 # MAGIC # Data Download
 # MAGIC We begin our project with doing the necessary data setup and downloading the dataset we need The online retail giant [Amazon's Product Reviews](https://cseweb.ucsd.edu/~jmcauley/datasets/amazon_v2/) are publicly available via an easily downloadable route. Each row in the dataset equates a review written by a user, and also has other data points such as star ratings which we will get to explore later.. 
 # MAGIC
-# MAGIC **Set Up**
+# MAGIC **Setup Used:**
 # MAGIC
-# MAGIC This notebook is run on 13.2 ML Runtime.
+# MAGIC - Runtime: 13.2 ML
+# MAGIC - Cluster:
+# MAGIC   - Machine: 16 CPU + 64 GB RAM (For Driver & Worker) 
+# MAGIC   - 2-8 Worker Auto Scaling
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Initial Setup
+# MAGIC ### Initial Setup
 # MAGIC
 # MAGIC Setting up the necessary data holding objects such as Catalogs, Databases or Volumes are a great way to start projects on Databricks. These help us organise our assets with ease.
 # MAGIC
@@ -42,7 +45,7 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Setting Up Paths
+# MAGIC ### Setting Up Paths
 # MAGIC
 # MAGIC We will now set up our paths, which we will use for downloading and storing the data. This code will give you the option to select a `dbfs` path or any other path you might want to use for storing the raw files.
 
@@ -67,7 +70,7 @@ os.environ["MAIN_STORAGE_PATH"] = main_storage_path
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Downloading the Data
+# MAGIC ### Downloading the Data
 # MAGIC Now, we can download the data from the public registry.. There are many datasets which are available in this source. They are grouped by category such as Books or Cameras. For this use case, we will focus on the books dataset as we might see reviews about the books we have read before.
 # MAGIC
 # MAGIC These datasets are in the form of compressed JSON. Our first task is going to be to download and unzip the data in the main location we have predefined, and we are going to execute this within a shell script, using the `curl` utility for download.
@@ -156,7 +159,9 @@ os.environ["MAIN_STORAGE_PATH"] = main_storage_path
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### Reviews Table
+# MAGIC #### Reviews Table
+# MAGIC
+# MAGIC This table holds the reviews received by customers. We define a schema for it by using the information we got from above and then use spark for reading it.
 
 # COMMAND ----------
 
@@ -206,7 +211,9 @@ display(raw_reviews_df.limit(2))
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### Books Table
+# MAGIC #### Books Table
+# MAGIC
+# MAGIC This table holds metadata for the books such as author, price, etc.. We folow the same process from above.
 
 # COMMAND ----------
 
@@ -262,7 +269,7 @@ display(raw_books_df.limit(2))
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Joining Two Tables
+# MAGIC ### Joining Two Tables
 # MAGIC By having a quick look above, we can tell that the data is in the format we expected it to be.. There are some columns which look redundant in the products (metadata) table, however we can deal with those in the next notebook where we will do pre-processing & exploration work.
 # MAGIC
 # MAGIC Whats also important is that the row counts of the dataframes are matching with the counts we got with our shell command, which means that we do not have any malformed records or data loss in the read process.
@@ -293,7 +300,7 @@ display(raw_book_reviews_df.limit(2))
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Save All Dataframes
+# MAGIC ### Save All Dataframes
 # MAGIC
 # MAGIC Final step is to save all of the dataframes we have as Delta tables, in the specific Schema we have created at the very top of this notebook.
 # MAGIC
