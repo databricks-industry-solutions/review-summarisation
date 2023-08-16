@@ -1,7 +1,7 @@
 """Global Variables"""
 
 # Data Globals (All Notebooks)
-CATALOG_NAME = "rs_sol_acc"  # Unity Catalog Name
+CATALOG_NAME = "mas_test"  # Unity Catalog Name
 SCHEMA_NAME = "review_summarisation"  # Schema Name
 
 # Sampling Parameters (0.2-explore-prep)
