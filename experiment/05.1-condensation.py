@@ -10,8 +10,6 @@
 # MAGIC
 # MAGIC -- Sets the standard database to be used in this notebook
 # MAGIC USE SCHEMA review_summarisation;
-# MAGIC
-# MAGIC
 
 # COMMAND ----------
 

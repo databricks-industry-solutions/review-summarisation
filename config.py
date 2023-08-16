@@ -1,4 +1,4 @@
 """Global Variables"""
 
-CATALOG_NAME = "rs_sol_acc"
+CATALOG_NAME = "mas"
 SCHEMA_NAME = "review_summarisation"
