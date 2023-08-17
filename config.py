@@ -3,7 +3,7 @@
 # Configurable
 ################################################################
 # Data Globals (All Notebooks)
-CATALOG_NAME = "mas_test_2"  # Unity Catalog Name
+CATALOG_NAME = "rcg_rs_sol_acc"  # Unity Catalog Name
 SCHEMA_NAME = "review_summarisation"  # Schema Name
 
 # UC Options (All Notebooks)
