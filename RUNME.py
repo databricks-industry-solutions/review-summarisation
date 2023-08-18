@@ -132,7 +132,7 @@ job_json = {
                     "spark_conf": {
                         "spark.databricks.delta.preview.enabled": "true"
                     },
-                    "node_type_id": {"AWS": "g5.4xlarge", "MSA": "Standard_NC4as_T4_v3"}, # or "Standard_NC24ads_A100_v4" on MSA for A100 if capacity is available - compatible VMs are not available on GCP at this time
+                    "node_type_id": {"AWS": "g5.4xlarge", "MSA": "Standard_NC24ads_A100_v4"}, # compatible VMs are not available on GCP at this time
                     "enable_elastic_disk": True,
                     "runtime_engine": "STANDARD",
                     "single_user_name": user_name,
