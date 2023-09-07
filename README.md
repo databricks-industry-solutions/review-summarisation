@@ -3,27 +3,36 @@
 [![CLOUD](https://img.shields.io/badge/CLOUD-ALL-blue?logo=googlecloud&style=for-the-badge)](https://cloud.google.com/databricks)
 [![POC](https://img.shields.io/badge/POC-10_days-green?style=for-the-badge)](https://databricks.com/try-databricks)
 
-## Business Problem
-<List of the business use case the solution accelerator address>
+## Automated Analysis of Product Reviews Using Large Language Models
+Today, most organizations employ a modestly-sized team of workers to read and digest user feedback for insights that may help improve a product's performance or otherwise identify issues related to customer satisfaction.
 
-## Scope
-<How we expect the user to use this content>
+The work is important but anything but sexy. A worker reads a review, takes notes, and moves on to the next. Individual reviews that require a response are flagged and a summary of the feedback from across multiple reviews are compiled for review by product or category managers.
+
+This is a type of work that's ripe for automation. The volume of reviews that pour into a site mean the more detailed portions of this work are often performed on a limited subset of products across variable windows depending on a products importance. In more sophisticated organizations, rules detecting course or inappropriate language and models estimating user sentiment or otherwise classifying reviews for positive, negative or neutral experiences may be applied to help identify problematic content and draw a reviewer's attention to it. But either way, a lot is missed simply because we can't throw enough bodies at the problem to keep up and those bodies tend to become bored or fatigued with the monotony of the work.
+
+But using an LLM, issues of scale and consistency can be easily addressed. All we need to do is bring the product reviews to the model and ask:
+
+* What are the top three points of negative feedback found across these reviews?
+* What features do our customers like best about this product?
+* Do customers feel they are receiving sufficient value from the product relative to what they are being asked to pay?
+* Are there any reviews that are especially negative or are using inappropriate language?
 
 ___
-<john.doe@databricks.com>
+<mustafaali.sezer@databricks.com>, <bryan.smith@databricks.com>
+___
+
+![image](https://cms.databricks.com/sites/default/files/inline-images/db-737-blog-img-1.png)
 
 ___
 
-
-IMAGE TO REFERENCE ARCHITECTURE
-
-___
-
-&copy; 2022 Databricks, Inc. All rights reserved. The source in this notebook is provided subject to the Databricks License [https://databricks.com/db-license-source].  All included or referenced third party libraries are subject to the licenses set forth below.
+&copy; 2023 Databricks, Inc. All rights reserved. The source in this notebook is provided subject to the Databricks License [https://databricks.com/db-license-source].  All included or referenced third party libraries are subject to the licenses set forth below.
 
 | library                                | description             | license    | source                                              |
 |----------------------------------------|-------------------------|------------|-----------------------------------------------------|
-| PyYAML                                 | Reading Yaml files      | MIT        | https://github.com/yaml/pyyaml                      |
+| flash-attn      | Fast and memory-efficient exact attention  | BSD        | https://github.com/Dao-AILab/flash-attention     |
+| xformers        | Hackable and optimized Transformers building blocks  | BSD        | https://github.com/facebookresearch/xformers  |
+| ctranslate2        | Fast inference engine for Transformer models  | MIT        | https://github.com/OpenNMT/CTranslate2  |
+| triton        | Triton language and compiler  | MIT        | https://github.com/openai/triton/  |
 
 ## Getting started
 
